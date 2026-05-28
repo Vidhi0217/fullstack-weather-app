@@ -1,0 +1,15 @@
+# Ignore local environment and secret files
+.env
+*.env
+config.js
+api_key.js
+
+# Ignore editor and OS files
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Node/npm artifacts (if you ever add dependencies)
+node_modules/
+npm-debug.log
+yarn-error.log

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather App</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="background"></div>
+    <div class="container">
+        <div class="search-container">
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Type a city name..."
+                    autocomplete="off"
+                >
+                <span class="search-icon">🔍</span>
+            </div>
+            <div id="suggestions" class="suggestions"></div>
+        </div>
+
+        <div class="toolbar">
+            <button id="locationButton" class="action-button" type="button">📍 Current location</button>
+            <button id="historyToggleBtn" class="action-button" type="button">📚 History</button>
+            <button id="exportButton" class="action-button" type="button">⬇️ Export CSV</button>
+        </div>
+
+        <div id="statusMessage" class="status-message visually-hidden"></div>
+
+        <div id="weatherDisplay" class="weather-display">
+            <div class="welcome-message">
+                <p>👆 Type a city name above and press Enter or tap Search</p>
+            </div>
+        </div>
+
+        <aside id="historyDrawer" class="history-drawer">
+            <div class="history-drawer-header">
+                <div>
+                    <h2>Recent Searches</h2>
+                    <p class="history-subtitle">Tap a city to re-open the weather card</p>
+                </div>
+                <button id="closeHistoryBtn" class="drawer-close" type="button">✕</button>
+            </div>
+            <div class="history-controls">
+                <button id="refreshHistoryBtn" class="history-refresh" type="button">Refresh</button>
+            </div>
+            <div id="historyList" class="history-list"></div>
+            <div id="historyEmpty" class="empty-state">Your recent searches will appear here.</div>
+        </aside>
+
+        <div id="errorMessage" class="error-message"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+

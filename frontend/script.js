@@ -9,6 +9,10 @@ const endpoints = {
     forecastByLocation: `${BACKEND_URL}/forecast-by-location`,
     history: `${BACKEND_URL}/history`,
     exportCsv: `${BACKEND_URL}/export/csv`,
+    exportJson: `${BACKEND_URL}/export/json`,
+    exportPdf: `${BACKEND_URL}/export/pdf`,
+    timezone: `${BACKEND_URL}/timezone`,
+    map: `${BACKEND_URL}/map`,
 };
 
 const dom = {
@@ -59,9 +63,11 @@ function init() {
     loadSearchHistory();
 }
 
-function setLoading(isLoading, message = '') {
+function setLoading(isLoading, message = '', disableSearch = true) {
     state.isLoading = isLoading;
-    dom.searchInput.disabled = isLoading;
+    if (disableSearch) {
+        dom.searchInput.disabled = isLoading;
+    }
     dom.locationButton.disabled = isLoading;
     dom.exportButton.disabled = isLoading;
     dom.refreshHistoryBtn.disabled = isLoading;
@@ -91,7 +97,7 @@ function getErrorMessage(error) {
 
 async function fetchJson(url, options = {}) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
     options.signal = controller.signal;
     options.headers = {
         'Accept': 'application/json',
@@ -135,7 +141,7 @@ async function fetchLocationSuggestions(query) {
 
     try {
         hideError();
-        setLoading(true, 'Finding locations...');
+        setLoading(true, 'Finding locations...', false);
 
         const data = await fetchJson(`${endpoints.geocode}?q=${encodeURIComponent(query)}`);
         const locations = data.suggestions || [];
@@ -276,6 +282,11 @@ function renderWeather(weatherData, forecastData, locationLabel) {
     const description = weatherData.condition;
     const icon = getWeatherIcon(weatherData.condition, weatherData.icon);
     const humidity = weatherData.humidity;
+    const pressure = weatherData.pressure;
+    const visibility = weatherData.visibility;
+    const uvIndex = weatherData.uv_index;
+    const sunrise = weatherData.sunrise || 'N/A';
+    const sunset = weatherData.sunset || 'N/A';
     const windSpeed = weatherData.wind_speed;
     const precipitation = Number(weatherData.precipitation).toFixed(1);
     const airQuality = weatherData.air_quality ? getAirQualityText(weatherData.air_quality.aqi) : 'N/A';
@@ -296,6 +307,10 @@ function renderWeather(weatherData, forecastData, locationLabel) {
                 <span class="location-pin">📍</span>
                 <span class="location-name">${locationLabel}</span>
                 <span class="date">${dateString}</span>
+                <div class="location-extra">
+                    <span id="timezoneInfo" class="timezone-info"></span>
+                    <a id="mapLink" class="map-link" target="_blank" rel="noopener noreferrer">View Map</a>
+                </div>
             </div>
 
             <div class="current-weather">
@@ -326,6 +341,41 @@ function renderWeather(weatherData, forecastData, locationLabel) {
                     <div class="metric-info">
                         <div class="metric-label">Precipitation</div>
                         <div class="metric-value">${precipitation} mm</div>
+                    </div>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-icon">🧭</span>
+                    <div class="metric-info">
+                        <div class="metric-label">Visibility</div>
+                        <div class="metric-value">${visibility ? (visibility / 1000).toFixed(1) + ' km' : 'N/A'}</div>
+                    </div>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-icon">🌡️</span>
+                    <div class="metric-info">
+                        <div class="metric-label">Pressure</div>
+                        <div class="metric-value">${pressure ? pressure + ' hPa' : 'N/A'}</div>
+                    </div>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-icon">☀️</span>
+                    <div class="metric-info">
+                        <div class="metric-label">Sunrise</div>
+                        <div class="metric-value">${sunrise}</div>
+                    </div>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-icon">🌙</span>
+                    <div class="metric-info">
+                        <div class="metric-label">Sunset</div>
+                        <div class="metric-value">${sunset}</div>
+                    </div>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-icon">☀️</span>
+                    <div class="metric-info">
+                        <div class="metric-label">UV Index</div>
+                        <div class="metric-value">${uvIndex != null ? uvIndex : 'N/A'}</div>
                     </div>
                 </div>
                 <div class="metric-item">
@@ -380,6 +430,81 @@ function renderWeather(weatherData, forecastData, locationLabel) {
             </div>
         </div>
     `;
+
+    // Populate timezone information and map link when coordinates are available.
+    (function populateExtras() {
+        try {
+            const lat = weatherData.lat;
+            const lon = weatherData.lon;
+            const tzEl = dom.weatherDisplay.querySelector('#timezoneInfo');
+            const mapEl = dom.weatherDisplay.querySelector('#mapLink');
+
+            if (mapEl && lat != null && lon != null) {
+                mapEl.href = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+            }
+
+            if (tzEl && lat != null && lon != null) {
+                fetchJson(`${endpoints.timezone}?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`)
+                    .then((data) => {
+                        if (data && data.timeZone) {
+                            tzEl.textContent = `${data.timeZone} • ${data.dateTime}`;
+                        }
+                    })
+                    .catch(() => {
+                        // ignore timezone failures
+                    });
+            }
+        } catch (e) {
+            // ignore UI extras errors
+        }
+    })();
+
+    // Set background based on day/night (using location's timezone)
+    (function updateBackground() {
+        try {
+            const sunriseStr = weatherData.sunrise;
+            const sunsetStr = weatherData.sunset;
+            
+            if (!sunriseStr || !sunsetStr) {
+                return;
+            }
+
+            const sunrise = Math.floor(new Date(sunriseStr).getTime() / 1000);
+            const sunset = Math.floor(new Date(sunsetStr).getTime() / 1000);
+            
+            // Fetch timezone to get location's local time
+            const lat = weatherData.lat;
+            const lon = weatherData.lon;
+            
+            if (lat == null || lon == null) {
+                return;
+            }
+
+            fetchJson(`${endpoints.timezone}?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`)
+                .then((data) => {
+                    if (data && data.offset != null) {
+                        // offset is in minutes from UTC
+                        const offsetSeconds = data.offset * 60;
+                        const nowUTC = Math.floor(Date.now() / 1000);
+                        const nowLocal = nowUTC + offsetSeconds;
+                        
+                        const isDaytime = nowLocal >= sunrise && nowLocal < sunset;
+                        const bgEl = document.querySelector('.background');
+                        
+                        if (bgEl) {
+                            const dayBg = "url('sunrise_mountain.jpg')";
+                            const nightBg = "url('night_sky.jpg')";
+                            bgEl.style.backgroundImage = isDaytime ? dayBg : nightBg;
+                        }
+                    }
+                })
+                .catch(() => {
+                    // ignore timezone failures - keep current background
+                });
+        } catch (e) {
+            // ignore background update errors
+        }
+    })();
 }
 
 function getAirQualityText(index) {

@@ -8,6 +8,7 @@ from services.weather_service import (
     fetch_location_suggestions,
     fetch_weather_by_range,
 )
+from services.weather_service import fetch_location_suggestions_fuzzy, fetch_timezone_by_coords
 from utils.helpers import error_response, validate_date_range
 
 weather_bp = Blueprint("weather", __name__)
@@ -124,8 +125,14 @@ def get_geocode():
     if not query:
         return error_response("The q query parameter is required.", 400)
 
+    fuzzy_flag = request.args.get("fuzzy", "0")
+    use_fuzzy = fuzzy_flag in ("1", "true", "yes")
+
     try:
-        payload = fetch_location_suggestions(query)
+        if use_fuzzy:
+            payload = fetch_location_suggestions_fuzzy(query)
+        else:
+            payload = fetch_location_suggestions(query)
         return jsonify({"suggestions": payload})
 
     except ValueError as exc:
@@ -134,3 +141,37 @@ def get_geocode():
         return error_response(str(exc), 502)
     except Exception:
         return error_response("Unexpected error fetching location suggestions.", 500)
+
+
+
+@weather_bp.route("/timezone", methods=["GET"])
+def get_timezone():
+    lat = request.args.get("lat")
+    lon = request.args.get("lon")
+    if lat is None or lon is None:
+        return error_response("Latitude and longitude query parameters are required.", 400)
+
+    try:
+        payload = fetch_timezone_by_coords(lat, lon)
+        return jsonify(payload)
+    except ValueError as exc:
+        return error_response(str(exc), 400)
+    except RuntimeError as exc:
+        return error_response(str(exc), 502)
+    except Exception:
+        return error_response("Unexpected error fetching timezone.", 500)
+
+
+@weather_bp.route("/map", methods=["GET"])
+def get_map_links():
+    lat = request.args.get("lat")
+    lon = request.args.get("lon")
+    if lat is None or lon is None:
+        return error_response("Latitude and longitude query parameters are required.", 400)
+
+    try:
+        google = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+        osm = f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=10/{lat}/{lon}"
+        return jsonify({"google_maps": google, "openstreetmap": osm})
+    except Exception:
+        return error_response("Unexpected error building map links.", 500)

@@ -6,6 +6,7 @@ from config import (
     OPENWEATHER_AIR_QUALITY_URL,
     OPENWEATHER_CURRENT_URL,
     OPENWEATHER_FORECAST_URL,
+    OPENWEATHER_ONECALL_URL,
     OPENWEATHER_GEOCODING_URL,
     OPENWEATHER_TIMEOUT,
     OPENSTREETMAP_REVERSE_URL,
@@ -18,6 +19,7 @@ from utils.helpers import (
     validate_coordinates,
     validate_city,
 )
+from difflib import SequenceMatcher
 
 
 class WeatherService:
@@ -167,6 +169,8 @@ class WeatherService:
             "city": f"{payload.get('name', '')}, {payload.get('sys', {}).get('country', '')}".strip(', '),
             "temperature": round(payload.get("main", {}).get("temp", 0), 1),
             "humidity": payload.get("main", {}).get("humidity", 0),
+            "pressure": payload.get("main", {}).get("pressure", 0),
+            "visibility": payload.get("visibility", 0),
             "wind_speed": round(payload.get("wind", {}).get("speed", 0), 1),
             "condition": payload.get("weather", [])[0].get("description", "Unknown").title(),
             "icon": payload.get("weather", [])[0].get("icon", "01d"),
@@ -176,6 +180,8 @@ class WeatherService:
                 or 0,
                 1,
             ),
+            "sunrise": payload.get("sys", {}).get("sunrise"),
+            "sunset": payload.get("sys", {}).get("sunset"),
         }
 
         lat = payload.get("coord", {}).get("lat")
@@ -186,9 +192,12 @@ class WeatherService:
         weather_data["lat"] = lat
         weather_data["lon"] = lon
         weather_data["local_time"] = format_local_time(dt, timezone_offset)
+        weather_data["sunrise"] = format_local_time(weather_data["sunrise"], timezone_offset)
+        weather_data["sunset"] = format_local_time(weather_data["sunset"], timezone_offset)
         weather_data["location_info"] = cls._fetch_location_info(lat, lon) if lat is not None and lon is not None else None
 
         air_quality = cls._fetch_air_quality(lat, lon) if lat is not None and lon is not None else None
+        weather_data["uv_index"] = cls._fetch_uv_index(lat, lon) if lat is not None and lon is not None else None
 
         weather_data["air_quality"] = air_quality
         weather_data["recommendations"] = build_recommendations(
@@ -215,12 +224,11 @@ class WeatherService:
         params["q"] = city
 
         payload = cls._fetch_json(OPENWEATHER_FORECAST_URL, params)
-        forecast = parse_forecast_response(payload)
 
         return {
             "city": payload.get("city", {}).get("name", city),
             "country": payload.get("city", {}).get("country", ""),
-            "forecast": forecast,
+            "list": payload.get("list", []),
         }
 
     @classmethod
@@ -248,7 +256,7 @@ class WeatherService:
 
         payload = cls._fetch_json(OPENWEATHER_GEOCODING_URL, params)
 
-        return [
+        results = [
             {
                 "name": item.get("name", ""),
                 "lat": item.get("lat"),
@@ -258,6 +266,8 @@ class WeatherService:
             }
             for item in payload
         ]
+
+        return results
 
     @staticmethod
     def _fetch_air_quality(lat, lon):
@@ -279,6 +289,28 @@ class WeatherService:
                 "aqi": air_index,
                 "description": WeatherService._translate_aqi(air_index),
             }
+        except requests.RequestException:
+            return None
+
+    @staticmethod
+    def _fetch_uv_index(lat, lon):
+        if lat is None or lon is None:
+            return None
+
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "exclude": "minutely,hourly,daily,alerts",
+            "appid": OPENWEATHER_API_KEY,
+            "units": "metric",
+        }
+
+        try:
+            response = requests.get(OPENWEATHER_ONECALL_URL, params=params, timeout=OPENWEATHER_TIMEOUT)
+            if response.status_code != 200:
+                return None
+            data = response.json()
+            return data.get("current", {}).get("uvi")
         except requests.RequestException:
             return None
 
@@ -318,3 +350,42 @@ def fetch_weather_by_range(city=None, lat=None, lon=None, start_date=None, end_d
 
 def fetch_location_suggestions(query, limit=5):
     return WeatherService.fetch_location_suggestions(query, limit=limit)
+
+
+def fetch_location_suggestions_fuzzy(query, limit=5):
+    """Fetch suggestions and return fuzzy-matched results ranked by similarity to the query."""
+    suggestions = WeatherService.fetch_location_suggestions(query, limit=max(limit, 10))
+    scored = []
+    q = (query or "").lower()
+    for item in suggestions:
+        name_parts = [item.get("name", ""), item.get("state", ""), item.get("country", "")]
+        candidate = ", ".join([p for p in name_parts if p]).lower()
+        score = SequenceMatcher(None, q, candidate).ratio()
+        scored.append((score, item))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = [item for _, item in scored[:limit]]
+    return top
+
+
+def fetch_timezone_by_coords(lat, lon):
+    """Return current local time and timezone information for given coordinates using timeapi.io."""
+    if lat is None or lon is None:
+        raise ValueError("Latitude and longitude are both required.")
+
+    try:
+        resp = requests.get(
+            "https://timeapi.io/api/Time/current/coordinate",
+            params={"latitude": lat, "longitude": lon},
+            timeout=OPENWEATHER_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError("Timezone service returned an error.")
+        data = resp.json()
+        return {
+            "dateTime": data.get("dateTime"),
+            "timeZone": data.get("timeZone"),
+            "utcOffset": data.get("utcOffset"),
+        }
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Timezone lookup failed: {exc}") from exc

@@ -10,12 +10,13 @@ DOTENV_PATH = BASE_DIR / ".env"
 load_dotenv(DOTENV_PATH)
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
-OPENWEATHER_TIMEOUT = 10
+OPENWEATHER_TIMEOUT = 30
 
 DB_PATH = BASE_DIR / "weather.db"
 
 OPENWEATHER_CURRENT_URL = "https://api.openweathermap.org/data/2.5/weather"
 OPENWEATHER_FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
+OPENWEATHER_ONECALL_URL = "https://api.openweathermap.org/data/2.5/onecall"
 OPENWEATHER_GEOCODING_URL = "https://api.openweathermap.org/geo/1.0/direct"
 OPENWEATHER_AIR_QUALITY_URL = "https://api.openweathermap.org/data/2.5/air_pollution"
 OPENSTREETMAP_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
